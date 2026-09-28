@@ -1,0 +1,69 @@
+"""Switches: heating stages, constant temp mode, maintain min temp mode."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any
+
+from homeassistant.components.switch import SwitchEntity, SwitchEntityDescription
+from homeassistant.const import STATE_ON
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.restore_state import RestoreEntity
+
+from . import TenkoConfigEntry
+from .const import GROUP_COT, GROUP_MMT, GROUP_STG, STATUS_OFF, STATUS_ON
+from .coordinator import TenkoCoordinator
+from .entity import TenkoEntity
+
+
+@dataclass(frozen=True, kw_only=True)
+class TenkoSwitchDescription(SwitchEntityDescription):
+    group: str
+    field: str
+
+
+SWITCHES: tuple[TenkoSwitchDescription, ...] = (
+    TenkoSwitchDescription(key="stage_1", name="Stage 1", icon="mdi:heating-coil", group=GROUP_STG, field="stage_1"),
+    TenkoSwitchDescription(key="stage_2", name="Stage 2", icon="mdi:heating-coil", group=GROUP_STG, field="stage_2"),
+    TenkoSwitchDescription(key="const_temp_mode", name="Constant air temperature", icon="mdi:thermostat", group=GROUP_COT, field="status"),
+    TenkoSwitchDescription(key="maintain_min_temp", name="Maintain min temperature", icon="mdi:snowflake-thermometer", group=GROUP_MMT, field="status"),
+)
+
+
+async def async_setup_entry(
+    hass: HomeAssistant, entry: TenkoConfigEntry, async_add_entities: AddEntitiesCallback
+) -> None:
+    coordinator = entry.runtime_data
+    async_add_entities(TenkoSwitch(coordinator, d) for d in SWITCHES)
+
+
+class TenkoSwitch(TenkoEntity, SwitchEntity, RestoreEntity):
+    entity_description: TenkoSwitchDescription
+
+    def __init__(self, coordinator: TenkoCoordinator, description: TenkoSwitchDescription) -> None:
+        super().__init__(coordinator, description.key)
+        self.entity_description = description
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last = await self.async_get_last_state()
+        if last is not None:
+            self.coordinator.restore_field(
+                self.entity_description.group,
+                self.entity_description.field,
+                STATUS_ON if last.state == STATE_ON else STATUS_OFF,
+            )
+
+    @property
+    def is_on(self) -> bool:
+        d = self.entity_description
+        return str(self.coordinator.commands[d.group][d.field]).lower() == "on"
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        d = self.entity_description
+        await self.coordinator.async_send(d.group, **{d.field: STATUS_ON})
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        d = self.entity_description
+        await self.coordinator.async_send(d.group, **{d.field: STATUS_OFF})

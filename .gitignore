@@ -1,0 +1,20 @@
+# --- секреты: никогда не коммитить ---
+secrets.yaml
+*.token
+token
+.env
+.env.*
+flows*.json
+flows_cred*.json
+*.nodered.json
+
+# --- python ---
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# --- os / ide ---
+.DS_Store
+.idea/
+.vscode/

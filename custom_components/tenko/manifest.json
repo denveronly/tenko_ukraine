@@ -1,0 +1,12 @@
+{
+  "domain": "tenko",
+  "name": "Tenko Boiler",
+  "codeowners": [],
+  "config_flow": true,
+  "documentation": "https://github.com/OWNER/ha-tenko",
+  "integration_type": "device",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/OWNER/ha-tenko/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}
