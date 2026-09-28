@@ -21,3 +21,14 @@ TOTAL_STATE = {
     "MOD": {"enabled": "Off", "amount": "0,6", "status": "Off"},
     "AF": "Off", "sens": "false",
 }
+
+SETTINGS = {
+    "MMT": {"status": "Off", "min_temp": "10", "max_temp": "13"},
+    "WF": {"temp": "30", "delta": "3"},
+    "RWF": {"temp": "24", "delta": "3"},
+    "STG": {"stage_1": "Off", "stage_2": "Off"},
+    "PSS": {"pause_1": "5", "pause_2": "10"},
+    "MOD": "Off",
+}
+CONST_TEMP = {"COT": {"status": "On", "temp": "29.5"}}
+USED_CHART = {"USE": "Temp"}

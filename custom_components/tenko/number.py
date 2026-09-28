@@ -8,14 +8,14 @@ from homeassistant.components.number import (
     NumberDeviceClass,
     NumberEntityDescription,
     NumberMode,
-    RestoreNumber,
+    NumberEntity,
 )
 from homeassistant.const import UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import TenkoConfigEntry
-from .const import GROUP_COT, GROUP_MMT, GROUP_RWF, GROUP_WF
+from .const import GROUP_COT, GROUP_MMT, GROUP_PSS, GROUP_RWF, GROUP_WF
 from .coordinator import TenkoCoordinator
 from .entity import TenkoEntity
 
@@ -49,6 +49,14 @@ NUMBERS: tuple[TenkoNumberDescription, ...] = (
     _temp("const_temp", "Constant air temperature", GROUP_COT, "temp", 5, 30),
     _temp("min_temp_low", "Maintain min temp: min", GROUP_MMT, "min_temp", 1, 25),
     _temp("min_temp_high", "Maintain min temp: max", GROUP_MMT, "max_temp", 1, 25),
+    TenkoNumberDescription(
+        key="pause_1", name="Pause 1", icon="mdi:timer-pause-outline", group=GROUP_PSS, field="pause_1",
+        native_min_value=0, native_max_value=60, native_step=1, mode=NumberMode.BOX,
+    ),
+    TenkoNumberDescription(
+        key="pause_2", name="Pause 2", icon="mdi:timer-pause-outline", group=GROUP_PSS, field="pause_2",
+        native_min_value=0, native_max_value=60, native_step=1, mode=NumberMode.BOX,
+    ),
 )
 
 
@@ -59,22 +67,12 @@ async def async_setup_entry(
     async_add_entities(TenkoNumber(coordinator, d) for d in NUMBERS)
 
 
-class TenkoNumber(TenkoEntity, RestoreNumber):
+class TenkoNumber(TenkoEntity, NumberEntity):
     entity_description: TenkoNumberDescription
 
     def __init__(self, coordinator: TenkoCoordinator, description: TenkoNumberDescription) -> None:
         super().__init__(coordinator, description.key)
         self.entity_description = description
-
-    async def async_added_to_hass(self) -> None:
-        await super().async_added_to_hass()
-        last = await self.async_get_last_number_data()
-        if last and last.native_value is not None:
-            self.coordinator.restore_field(
-                self.entity_description.group,
-                self.entity_description.field,
-                _fmt(last.native_value),
-            )
 
     @property
     def native_value(self) -> float | None:

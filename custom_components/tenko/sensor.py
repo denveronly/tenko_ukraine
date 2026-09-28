@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from homeassistant.components.sensor import (
+    RestoreSensor,
     SensorDeviceClass,
     SensorEntity,
     SensorEntityDescription,
@@ -30,13 +31,17 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.util import dt as dt_util
 
 from . import TenkoConfigEntry
+from .const import (
+    CONF_STAGE1_POWER,
+    CONF_STAGE2_POWER,
+    DEFAULT_STAGE1_POWER,
+    DEFAULT_STAGE2_POWER,
+)
 from .coordinator import TenkoCoordinator
 from .entity import TenkoEntity
-
-MONTHS = ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
-
 
 def num(value: Any) -> float | None:
     """'1,3' / '1.3' / 1.3 -> 1.3; anything else -> None."""
@@ -78,6 +83,7 @@ def _boiler_time(data: dict[str, Any]) -> str | None:
 @dataclass(frozen=True, kw_only=True)
 class TenkoSensorDescription(SensorEntityDescription):
     value_fn: Callable[[dict[str, Any]], Any]
+    attrs_fn: Callable[[dict[str, Any]], dict[str, Any]] | None = None
     raw_keys: tuple[str, ...] = ()  # top-level keys consumed by this sensor
 
 
@@ -90,20 +96,6 @@ def _temp(key: str, name: str, *keys: Any) -> TenkoSensorDescription:
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda d: num(path(d, *keys)),
         raw_keys=(keys[0],),
-    )
-
-
-def _energy(key: str, name: str, fn, *, enabled: bool = True, raw=()) -> TenkoSensorDescription:
-    return TenkoSensorDescription(
-        key=key,
-        name=name,
-        device_class=SensorDeviceClass.ENERGY,
-        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
-        state_class=SensorStateClass.TOTAL_INCREASING,
-        suggested_display_precision=1,
-        entity_registry_enabled_default=enabled,
-        value_fn=fn,
-        raw_keys=raw,
     )
 
 
@@ -130,29 +122,27 @@ SENSORS: tuple[TenkoSensorDescription, ...] = (
         value_fn=lambda d: num(d.get("POW")),
         raw_keys=("POW",),
     ),
-    # --- consumption ---
-    _energy(
-        "energy_month",
-        "Energy this month",
-        lambda d: num(path(d, "STAT", "kWt")),
-        raw=("STAT",),
-    ),
+    # --- consumption reported by the boiler ---
+    # STAT = kWh over the last `days` days (rolling window, not a counter)
     TenkoSensorDescription(
-        key="stat_days",
-        name="Energy this month: days counted",
-        icon="mdi:calendar-month",
-        entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda d: num(path(d, "STAT", "days")),
+        key="energy_period",
+        name="Energy last N days",
+        device_class=SensorDeviceClass.ENERGY,
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        value_fn=lambda d: num(path(d, "STAT", "kWt")),
+        attrs_fn=lambda d: {"days": num(path(d, "STAT", "days"))},
+        raw_keys=("STAT",),
     ),
-    _energy("energy_year", "Energy this year", _year_total, raw=("YSTAT",)),
-    *(
-        _energy(
-            f"energy_{m}",
-            f"Energy {m.capitalize()}",
-            (lambda i: lambda d: num(path(d, "YSTAT", i)))(i),
-            enabled=True,
-        )
-        for i, m in enumerate(MONTHS)
+    # YSTAT = rolling 12-month history (order shifts every month, no month labels)
+    TenkoSensorDescription(
+        key="energy_12_months",
+        name="Energy last 12 months",
+        device_class=SensorDeviceClass.ENERGY,
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        suggested_display_precision=0,
+        value_fn=_year_total,
+        attrs_fn=lambda d: {"months": [num(v) for v in d.get("YSTAT") or []]},
+        raw_keys=("YSTAT",),
     ),
     # --- diagnostics ---
     TenkoSensorDescription(
@@ -214,6 +204,13 @@ async def async_setup_entry(
 ) -> None:
     coordinator = entry.runtime_data
     async_add_entities(TenkoSensor(coordinator, d) for d in SENSORS)
+    async_add_entities(
+        [
+            TenkoPowerSensor(coordinator),
+            TenkoEnergySensor(coordinator, daily=False),
+            TenkoEnergySensor(coordinator, daily=True),
+        ]
+    )
 
     # Any new/unknown top-level field (future firmware) appears as a raw sensor.
     known_raw: set[str] = set()
@@ -244,6 +241,11 @@ class TenkoSensor(TenkoEntity, SensorEntity):
     def native_value(self) -> Any:
         return self.entity_description.value_fn(self.coordinator.data or {})
 
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        fn = self.entity_description.attrs_fn
+        return fn(self.coordinator.data or {}) if fn else None
+
 
 class TenkoRawSensor(TenkoEntity, SensorEntity):
     _attr_entity_category = EntityCategory.DIAGNOSTIC
@@ -257,3 +259,86 @@ class TenkoRawSensor(TenkoEntity, SensorEntity):
     def native_value(self) -> Any:
         value = (self.coordinator.data or {}).get(self.raw_key)
         return None if value is None else str(value)[:255]
+
+
+# --- Estimated consumption -------------------------------------------------
+# The boiler has no daily counter (DSTAT exists only on "smart" boilers), so
+# consumption is integrated here from which heating elements are on (HE1/HE2)
+# and their power (configurable in the integration options).
+
+MAX_GAP_SECONDS = 600  # don't integrate over outages / HA restarts
+
+
+def estimated_power(coordinator: TenkoCoordinator) -> float | None:
+    data = coordinator.data or {}
+    he1, he2 = data.get("HE1"), data.get("HE2")
+    if he1 is None and he2 is None:
+        return None
+    opts = coordinator.config_entry.options
+    p1 = opts.get(CONF_STAGE1_POWER, DEFAULT_STAGE1_POWER)
+    p2 = opts.get(CONF_STAGE2_POWER, DEFAULT_STAGE2_POWER)
+    on = lambda v: str(v).lower() == "on"  # noqa: E731
+    return p1 * on(he1) + p2 * on(he2)
+
+
+class TenkoPowerSensor(TenkoEntity, SensorEntity):
+    _attr_name = "Estimated power"
+    _attr_device_class = SensorDeviceClass.POWER
+    _attr_native_unit_of_measurement = UnitOfPower.KILO_WATT
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(self, coordinator: TenkoCoordinator) -> None:
+        super().__init__(coordinator, "estimated_power")
+
+    @property
+    def native_value(self) -> float | None:
+        return estimated_power(self.coordinator)
+
+
+class TenkoEnergySensor(TenkoEntity, RestoreSensor):
+    """kWh integrated from estimated power; daily=True resets at local midnight."""
+
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    _attr_suggested_display_precision = 2
+
+    def __init__(self, coordinator: TenkoCoordinator, *, daily: bool) -> None:
+        super().__init__(coordinator, "energy_today" if daily else "energy_total")
+        self._daily = daily
+        self._attr_name = "Energy today" if daily else "Energy total"
+        self._energy = 0.0
+        self._day = dt_util.now().date()
+        self._last_time = None
+        self._last_power: float | None = None
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last_state = await self.async_get_last_state()
+        last = await self.async_get_last_sensor_data()
+        if last is not None and last.native_value is not None and last_state is not None:
+            same_day = dt_util.as_local(last_state.last_changed).date() == self._day
+            if not self._daily or same_day:
+                self._energy = float(last.native_value)
+        self._take_sample()
+
+    def _take_sample(self) -> None:
+        now = dt_util.utcnow()
+        power = estimated_power(self.coordinator) if self.coordinator.last_update_success else None
+        if self._last_time is not None and self._last_power is not None:
+            seconds = (now - self._last_time).total_seconds()
+            if 0 < seconds <= MAX_GAP_SECONDS:
+                self._energy += self._last_power * seconds / 3600
+        if self._daily and dt_util.now().date() != self._day:
+            self._day = dt_util.now().date()
+            self._energy = 0.0
+        self._last_time, self._last_power = now, power
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        self._take_sample()
+        super()._handle_coordinator_update()
+
+    @property
+    def native_value(self) -> float:
+        return round(self._energy, 3)

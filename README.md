@@ -1,6 +1,6 @@
 # Tenko Boiler — Home Assistant integration
 
-A custom integration for the **Tenko** electric boiler that talks to its cloud API (`/api/v1`). It replaces the Node-RED flow: no MQTT, no `input_number`/`input_boolean`.
+A custom integration for the **Tenko** electric boiler that talks to its cloud API ([docs](https://my.tenko.ua/api/)). It replaces the Node-RED flow: no MQTT, no `input_number`/`input_boolean`.
 
 ## Installation
 
@@ -8,52 +8,46 @@ A custom integration for the **Tenko** electric boiler that talks to its cloud A
 
 **Manually:** copy `custom_components/tenko` into `/config/custom_components/` and restart HA.
 
-Then go to *Settings → Devices & Services → Add Integration → Tenko Boiler* and enter:
-- **Server URL**: `http://188.166.117.80` by default
-- **Login + password**: the token is fetched automatically and refreshed on a 401, **or**
-- **API token**: an existing Bearer token
+Then go to *Settings → Devices & Services → Add Integration → Tenko Boiler* and enter your **my.tenko.ua login and password**.
 
-> 🔐 The login, password and token are stored only in HA's `.storage` (config entry). They are not in the repository and must not be.
+## Authorization and secrets
+
+- On setup the integration calls `POST /api/v1/auth` itself and gets a token (one per user and boiler).
+- **Only the token is stored** (plus login and server address) in HA's config entry (`/config/.storage`). **The password is not stored.**
+- If the server ever rejects the token (401), HA shows a "Re-authenticate" notification: enter the password again and a new token is obtained.
+- Everything runs over HTTPS (`https://my.tenko.ua`, the same server as `188.166.117.80`).
+- There are no tokens or passwords in the repository; `scripts/check-secrets.sh` blocks a commit that accidentally contains one.
 
 ## Entities
 
 | Type | Entity | API source |
 |---|---|---|
-| sensor | Air temperature | `AT` |
-| sensor | Water feed / return water temperature | `WFT`, `RWFT` |
+| sensor | Air temperature, water feed / return temperature | `AT`, `WFT`, `RWFT` |
 | sensor | Pressure (bar) | `PRS` |
-| sensor | Energy this month (kWh) | `STAT.kWt` |
-| sensor | Energy this year (kWh, sum of months) | `YSTAT` |
-| sensor | Energy Jan…Dec (kWh) | `YSTAT[0..11]` |
+| sensor | **Energy today** (kWh, resets at midnight) | estimate, see below |
+| sensor | **Energy total** (kWh, for the Energy dashboard) | estimate |
+| sensor | Estimated power (kW) | `HE1`/`HE2` × element power |
+| sensor | Energy last N days (attribute `days`) | `STAT` |
+| sensor | Energy last 12 months (attribute `months`) | `YSTAT` |
 | sensor | Rated power, modulation, errors, boiler clock, firmware, serial number | `POW`, `MOD`, `ERR`, `BDT`, `VER`, `SN` |
-| binary_sensor | Heating element 1 / 2 (actually heating) | `HE1`, `HE2` |
-| binary_sensor | Pump, antifreeze, error, modulation | `PMP`, `AF`, `ERR`, `MOD` |
-| number | Water feed + delta | POST `/water_feed` `{"WF":{temp,delta}}` |
-| number | Return water feed + delta | POST `/returned_water_feed` `{"RWF":{…}}` |
-| number | Constant air temperature | POST `/const_temp` `{"COT":{…}}` |
-| number | Maintain min temp: min / max | POST `/maintain_min_temp` `{"MMT":{…}}` |
-| switch | Stage 1 / Stage 2 | POST `/stages` `{"STG":{stage_1,stage_2}}` |
-| switch | Constant air temperature / Maintain min temperature | `COT.status`, `MMT.status` |
+| binary_sensor | Heating element 1 / 2, pump, antifreeze, error, modulation | `HE1`, `HE2`, `PMP`, `AF`, `ERR`, `MOD` |
+| number | Water feed / return water feed + delta | `/water_feed`, `/returned_water_feed` |
+| number | Constant air temperature | `/const_temp` |
+| number | Maintain min temp: min / max | `/maintain_min_temp` |
+| number | Pause 1 / Pause 2 | `/pauses` |
+| switch | Stage 1 / Stage 2 | `/stages` |
+| switch | Constant temperature, maintain min temperature, modulation | `/const_temp`, `/maintain_min_temp`, `/modulation` |
+| select | Program: `Temp` / `WChart` (weekly) / `DChart` (daily) | `/used_chart_type` |
 
-Fields the API does not return (WF/RWF/COT/STG setpoints) are remembered by HA and restored after a restart. When you change one value, its whole group is sent (for example temp+delta), just like in Node-RED. Any new field from future firmware appears automatically as a `Raw …` diagnostic sensor.
+Current setpoints are read from `GET /settings`, `/const_temp` and `/used_chart_type` every minute, so changes made in the Tenko app show up in HA too.
 
 ## Daily consumption
 
-The API returns only monthly and yearly consumption. The daily value comes from the monthly counter using `utility_meter`:
+The boiler (non-"smart" model) has no daily counter: `v1.2/smart/day_stat_state` returns `null`, `STAT` is a sliding window over N days, and `YSTAT` is a rolling 12 months with no month labels. So the integration calculates consumption itself: every minute it checks which heating elements are on and multiplies by their power.
 
-```yaml
-utility_meter:
-  tenko_energy_daily:
-    name: Tenko energy today
-    source: sensor.tenko_energy_this_month
-    cycle: daily
-```
+Power defaults to **stage 1 = 7 kW, stage 2 = 14 kW** (21 kW total). It can be changed in *Integration → Configure*. The estimate ignores modulation and polls once a minute, so it is approximate. For exact numbers you need an electricity meter on the boiler line.
 
-`sensor.tenko_energy_this_month` can also be added directly to the **Energy dashboard** (`total_increasing`, kWh).
-
-## Weather-compensated control
-
-Your old Node-RED logic (outdoor temperature → water feed) is now a regular automation over `number.tenko_water_feed` / `number.tenko_returned_water_feed` and `switch.tenko_stage_1/2`.
+`sensor.tenko_energy_total` can be added to the **Energy dashboard**; a monthly counter can be built from it with `utility_meter` (`cycle: monthly`).
 
 ## Development
 

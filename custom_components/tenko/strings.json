@@ -3,31 +3,41 @@
     "step": {
       "user": {
         "title": "Tenko boiler",
-        "description": "Enter login and password (a token will be obtained automatically), or paste a ready API token.",
+        "description": "Log in with your my.tenko.ua account. The integration gets an API token and stores only the token — the password is not saved.",
         "data": {
-          "host": "Server URL",
           "login": "Login",
           "password": "Password",
-          "token": "API token (optional)"
+          "host": "Server URL"
         }
       },
       "reauth_confirm": {
         "title": "Re-authenticate Tenko",
+        "description": "The stored token was rejected. Log in again to get a new one.",
         "data": {
           "login": "Login",
-          "password": "Password",
-          "token": "API token (optional)"
+          "password": "Password"
         }
       }
     },
     "error": {
       "cannot_connect": "Cannot connect to the Tenko server",
-      "invalid_auth": "Invalid login/password or token",
-      "missing_credentials": "Enter login and password, or an API token"
+      "invalid_auth": "Invalid login or password"
     },
     "abort": {
       "already_configured": "This boiler is already configured",
       "reauth_successful": "Re-authentication successful"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Energy estimate",
+        "description": "The boiler has no daily energy counter, so consumption is calculated from which heating elements are on. Set their power.",
+        "data": {
+          "stage1_power": "Stage 1 (HE1) power, kW",
+          "stage2_power": "Stage 2 (HE2) power, kW"
+        }
+      }
     }
   }
 }
