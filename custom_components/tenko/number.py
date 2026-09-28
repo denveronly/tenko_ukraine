@@ -10,7 +10,7 @@ from homeassistant.components.number import (
     NumberMode,
     NumberEntity,
 )
-from homeassistant.const import UnitOfTemperature
+from homeassistant.const import UnitOfTemperature, UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -52,10 +52,12 @@ NUMBERS: tuple[TenkoNumberDescription, ...] = (
     TenkoNumberDescription(
         key="pause_1", name="Pause 1", icon="mdi:timer-pause-outline", group=GROUP_PSS, field="pause_1",
         native_min_value=0, native_max_value=60, native_step=1, mode=NumberMode.BOX,
+        device_class=NumberDeviceClass.DURATION, native_unit_of_measurement=UnitOfTime.MINUTES,
     ),
     TenkoNumberDescription(
         key="pause_2", name="Pause 2", icon="mdi:timer-pause-outline", group=GROUP_PSS, field="pause_2",
         native_min_value=0, native_max_value=60, native_step=1, mode=NumberMode.BOX,
+        device_class=NumberDeviceClass.DURATION, native_unit_of_measurement=UnitOfTime.MINUTES,
     ),
 )
 

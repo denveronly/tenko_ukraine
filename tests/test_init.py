@@ -240,7 +240,10 @@ async def test_temperature_sliders(hass: HomeAssistant, aioclient_mock) -> None:
         "number.tenko_maintain_min_temp_min",
     ):
         assert hass.states.get(entity).attributes["mode"] == "slider", entity
-    assert hass.states.get("number.tenko_pause_1").attributes["mode"] == "box"
+    pause = hass.states.get("number.tenko_pause_1")
+    assert pause.attributes["mode"] == "box"
+    assert pause.attributes["unit_of_measurement"] == "min"
+    assert pause.attributes["device_class"] == "duration"
     assert hass.states.get("number.tenko_constant_air_temperature").attributes["step"] == 0.5
 
     aioclient_mock.post(URL + "/const_temp", json={"status": "ok"})
