@@ -37,7 +37,7 @@ def _temp(key, name, group, field, lo, hi, step=1.0):
         native_step=step,
         native_unit_of_measurement=UnitOfTemperature.CELSIUS,
         device_class=NumberDeviceClass.TEMPERATURE,
-        mode=NumberMode.BOX,
+        mode=NumberMode.SLIDER,
     )
 
 
@@ -46,7 +46,7 @@ NUMBERS: tuple[TenkoNumberDescription, ...] = (
     _temp("water_feed_delta", "Water feed delta", GROUP_WF, "delta", 1, 10),
     _temp("returned_water_feed", "Return water feed", GROUP_RWF, "temp", 20, 85),
     _temp("returned_water_feed_delta", "Return water feed delta", GROUP_RWF, "delta", 1, 10),
-    _temp("const_temp", "Constant air temperature", GROUP_COT, "temp", 5, 30),
+    _temp("const_temp", "Constant air temperature", GROUP_COT, "temp", 5, 30, 0.5),
     _temp("min_temp_low", "Maintain min temp: min", GROUP_MMT, "min_temp", 1, 25),
     _temp("min_temp_high", "Maintain min temp: max", GROUP_MMT, "max_temp", 1, 25),
     TenkoNumberDescription(

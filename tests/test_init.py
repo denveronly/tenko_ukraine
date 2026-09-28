@@ -228,3 +228,24 @@ async def test_peak_control(hass: HomeAssistant, aioclient_mock) -> None:
         {"STG": {"stage_1": "Off", "stage_2": "Off"}},  # peak shutdown
         {"STG": {"stage_1": "Off", "stage_2": "On"}},   # restore at off-peak start
     ]
+
+
+async def test_temperature_sliders(hass: HomeAssistant, aioclient_mock) -> None:
+    await _setup(hass, aioclient_mock)
+    for entity in (
+        "number.tenko_water_feed",
+        "number.tenko_return_water_feed",
+        "number.tenko_water_feed_delta",
+        "number.tenko_constant_air_temperature",
+        "number.tenko_maintain_min_temp_min",
+    ):
+        assert hass.states.get(entity).attributes["mode"] == "slider", entity
+    assert hass.states.get("number.tenko_pause_1").attributes["mode"] == "box"
+    assert hass.states.get("number.tenko_constant_air_temperature").attributes["step"] == 0.5
+
+    aioclient_mock.post(URL + "/const_temp", json={"status": "ok"})
+    await hass.services.async_call(
+        "number", "set_value", {"entity_id": "number.tenko_constant_air_temperature", "value": 21.5}, blocking=True
+    )
+    post = [c[2] for c in aioclient_mock.mock_calls if c[0] == "POST"][-1]
+    assert post == {"COT": {"status": "On", "temp": "21.5"}}
