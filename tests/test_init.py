@@ -149,3 +149,82 @@ async def test_energy_estimate(hass: HomeAssistant, aioclient_mock, freezer) -> 
     total = float(hass.states.get("sensor.tenko_energy_total").state)
     assert 0.2 < today < 0.3
     assert today == total
+
+
+async def test_monthly_energy(hass: HomeAssistant, aioclient_mock) -> None:
+    # fixture: boiler clock = April 2026, YSTAT oldest (May 2025) -> newest (Apr 2026)
+    await _setup(hass, aioclient_mock)
+    s = hass.states.get
+    assert s("sensor.tenko_energy_this_month").state == "0.0"  # April
+    assert s("sensor.tenko_energy_previous_month").state == "149.516"  # March
+    assert s("sensor.tenko_energy_may").state == "229.202"
+    assert s("sensor.tenko_energy_may").attributes["year"] == 2025
+    assert s("sensor.tenko_energy_november").state == "1522.107"
+    assert s("sensor.tenko_energy_january").state == "234.132"
+    assert s("sensor.tenko_energy_january").attributes["year"] == 2026
+    months = s("sensor.tenko_energy_last_12_months").attributes
+    assert list(months)[:2] == ["2025-05", "2025-06"] and months["2026-04"] == 0.0
+
+
+def test_in_window() -> None:
+    from datetime import time as t
+
+    from custom_components.tenko.offpeak import in_window
+
+    assert in_window(t(23, 30), t(23), t(7))
+    assert in_window(t(6, 59), t(23), t(7))
+    assert not in_window(t(7, 0), t(23), t(7))
+    assert not in_window(t(12), t(23), t(7))
+    assert in_window(t(12), t(10), t(14)) and not in_window(t(15), t(10), t(14))
+
+
+async def test_peak_control(hass: HomeAssistant, aioclient_mock) -> None:
+    from datetime import datetime
+
+    from homeassistant.exceptions import HomeAssistantError
+    import pytest
+
+    entry = await _setup(hass, aioclient_mock)
+    aioclient_mock.post(URL + "/stages", json={"status": "ok"})
+    op = entry.runtime_data.offpeak
+    clock = {"now": datetime(2026, 9, 28, 23, 30)}
+    op.now = lambda: clock["now"]
+
+    s = hass.states.get
+    assert s("time.tenko_off_peak_start").state == "23:00:00"
+    assert s("time.tenko_off_peak_end").state == "07:00:00"
+
+    # off-peak night: stage 2 on, control enabled
+    await hass.services.async_call("switch", "turn_on", {"entity_id": "switch.tenko_stage_2"}, blocking=True)
+    await hass.services.async_call("switch", "turn_on", {"entity_id": "switch.tenko_turn_off_stages_in_peak"}, blocking=True)
+    assert s("binary_sensor.tenko_off_peak").state == "on"
+    assert s("switch.tenko_stage_2").state == "on"
+
+    # 07:01 -> peak: stages switched off and remembered
+    clock["now"] = datetime(2026, 9, 29, 7, 1)
+    await op.async_check()
+    await hass.async_block_till_done()
+    assert s("switch.tenko_stage_2").state == "off"
+    assert s("binary_sensor.tenko_off_peak").state == "off"
+    assert s("binary_sensor.tenko_off_peak").attributes["stages_to_restore"] == ["stage_2"]
+
+    # manual turn on during peak is refused
+    with pytest.raises(HomeAssistantError):
+        await hass.services.async_call("switch", "turn_on", {"entity_id": "switch.tenko_stage_1"}, blocking=True)
+
+    # move off-peak start to 22:00 via the time entity, then 22:00 -> restored
+    await hass.services.async_call(
+        "time", "set_value", {"entity_id": "time.tenko_off_peak_start", "time": "22:00:00"}, blocking=True
+    )
+    clock["now"] = datetime(2026, 9, 29, 22, 0, 5)
+    await op.async_check()
+    await hass.async_block_till_done()
+    assert s("switch.tenko_stage_2").state == "on"
+    assert s("switch.tenko_stage_1").state == "off"
+
+    posts = [c[2] for c in aioclient_mock.mock_calls if c[0] == "POST"]
+    assert posts == [
+        {"STG": {"stage_1": "Off", "stage_2": "On"}},   # manual, night
+        {"STG": {"stage_1": "Off", "stage_2": "Off"}},  # peak shutdown
+        {"STG": {"stage_1": "Off", "stage_2": "On"}},   # restore at off-peak start
+    ]

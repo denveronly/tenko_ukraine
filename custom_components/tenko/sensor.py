@@ -70,6 +70,54 @@ def _year_total(data: dict[str, Any]) -> float | None:
     return round(sum(values), 3) if values else None
 
 
+MONTH_NAMES = (
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+)
+
+
+def _boiler_month(data: dict[str, Any]) -> int:
+    """Current month 1..12 from the boiler clock (BDT.mm), fallback: HA clock."""
+    month = num(path(data, "BDT", "mm"))
+    if month is not None and 1 <= month <= 12:
+        return int(month)
+    return dt_util.now().month
+
+
+def _boiler_year(data: dict[str, Any]) -> int:
+    yy = num(path(data, "BDT", "yy"))
+    return 2000 + int(yy) if yy is not None else dt_util.now().year
+
+
+def ystat_index(data: dict[str, Any], month: int) -> int:
+    """YSTAT is a rolling 12-month window, oldest first, last item = current month.
+
+    Same mapping as the official my.tenko.ua web app: it rotates the month
+    labels left by the current month number.
+    """
+    return (month - _boiler_month(data) - 1) % 12
+
+
+def ystat_month(data: dict[str, Any], month: int) -> float | None:
+    """kWh for calendar month 1..12 (the most recent occurrence of it)."""
+    return num(path(data, "YSTAT", ystat_index(data, month)))
+
+
+def ystat_month_year(data: dict[str, Any], month: int) -> int:
+    year = _boiler_year(data)
+    return year if month <= _boiler_month(data) else year - 1
+
+
+def _ystat_by_month(data: dict[str, Any]) -> dict[str, float | None]:
+    """{"2025-10": 0.0, ..., "2026-09": 0.0} oldest -> newest."""
+    now = _boiler_month(data)
+    out = {}
+    for k in range(11, -1, -1):
+        month = (now - 1 - k) % 12 + 1
+        out[f"{ystat_month_year(data, month)}-{month:02d}"] = ystat_month(data, month)
+    return out
+
+
 def _boiler_time(data: dict[str, Any]) -> str | None:
     b = data.get("BDT")
     if not isinstance(b, dict):
@@ -141,8 +189,40 @@ SENSORS: tuple[TenkoSensorDescription, ...] = (
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         suggested_display_precision=0,
         value_fn=_year_total,
-        attrs_fn=lambda d: {"months": [num(v) for v in d.get("YSTAT") or []]},
+        attrs_fn=_ystat_by_month,
         raw_keys=("YSTAT",),
+    ),
+    # Boiler's own meter for the current month: grows during the month and
+    # resets on the 1st -> good source for the Energy dashboard / utility_meter.
+    TenkoSensorDescription(
+        key="energy_this_month",
+        name="Energy this month",
+        device_class=SensorDeviceClass.ENERGY,
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        suggested_display_precision=1,
+        value_fn=lambda d: ystat_month(d, _boiler_month(d)),
+    ),
+    TenkoSensorDescription(
+        key="energy_previous_month",
+        name="Energy previous month",
+        device_class=SensorDeviceClass.ENERGY,
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        suggested_display_precision=1,
+        value_fn=lambda d: ystat_month(d, (_boiler_month(d) - 2) % 12 + 1),
+    ),
+    *(
+        TenkoSensorDescription(
+            key=f"energy_{name.lower()}",
+            name=f"Energy {name}",
+            icon="mdi:calendar-month",
+            device_class=SensorDeviceClass.ENERGY,
+            native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+            suggested_display_precision=1,
+            value_fn=(lambda m: lambda d: ystat_month(d, m))(month),
+            attrs_fn=(lambda m: lambda d: {"year": ystat_month_year(d, m)})(month),
+        )
+        for month, name in enumerate(MONTH_NAMES, start=1)
     ),
     # --- diagnostics ---
     TenkoSensorDescription(

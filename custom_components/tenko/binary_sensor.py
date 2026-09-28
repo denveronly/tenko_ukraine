@@ -77,6 +77,7 @@ async def async_setup_entry(
 ) -> None:
     coordinator = entry.runtime_data
     async_add_entities(TenkoBinarySensor(coordinator, d) for d in BINARY_SENSORS)
+    async_add_entities([TenkoOffPeakSensor(coordinator)])
 
 
 class TenkoBinarySensor(TenkoEntity, BinarySensorEntity):
@@ -89,3 +90,28 @@ class TenkoBinarySensor(TenkoEntity, BinarySensorEntity):
     @property
     def is_on(self) -> bool | None:
         return self.entity_description.value_fn(self.coordinator.data or {})
+
+
+class TenkoOffPeakSensor(TenkoEntity, BinarySensorEntity):
+    """On while the current time is inside the off-peak window."""
+
+    _attr_name = "Off-peak"
+    _attr_icon = "mdi:weather-night"
+
+    def __init__(self, coordinator: TenkoCoordinator) -> None:
+        super().__init__(coordinator, "off_peak")
+
+    @property
+    def is_on(self) -> bool:
+        return self.coordinator.offpeak.is_off_peak()
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        op = self.coordinator.offpeak
+        return {
+            "start": op.start.strftime("%H:%M"),
+            "end": op.end.strftime("%H:%M"),
+            "next_change": op.next_change(),
+            "peak_control": op.enabled,
+            "stages_to_restore": op.saved_stages,
+        }

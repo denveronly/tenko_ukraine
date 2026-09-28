@@ -6,7 +6,9 @@ from dataclasses import dataclass
 from typing import Any
 
 from homeassistant.components.switch import SwitchEntity, SwitchEntityDescription
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import TenkoConfigEntry
@@ -35,6 +37,12 @@ async def async_setup_entry(
 ) -> None:
     coordinator = entry.runtime_data
     async_add_entities(TenkoSwitch(coordinator, d) for d in SWITCHES)
+    async_add_entities(
+        [
+            TenkoOffPeakSwitch(coordinator, "peak_control", "Turn off stages in peak", "mdi:transmission-tower-off", "enabled"),
+            TenkoOffPeakSwitch(coordinator, "restore_after_peak", "Restore stages after peak", "mdi:restore", "restore"),
+        ]
+    )
 
 
 class TenkoSwitch(TenkoEntity, SwitchEntity):
@@ -60,7 +68,35 @@ class TenkoSwitch(TenkoEntity, SwitchEntity):
             await self.coordinator.async_send(d.group, status)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
+        offpeak = self.coordinator.offpeak
+        if self.entity_description.group == GROUP_STG and offpeak and offpeak.blocks_stage_on():
+            raise HomeAssistantError(
+                f"Peak time: stages are blocked until off-peak starts at {offpeak.next_change()} "
+                "(disable 'Turn off stages in peak' to override)"
+            )
         await self._set(STATUS_ON)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         await self._set(STATUS_OFF)
+
+
+class TenkoOffPeakSwitch(TenkoEntity, SwitchEntity):
+    """Settings of the off-peak control (stored in HA, not on the boiler)."""
+
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(self, coordinator: TenkoCoordinator, key: str, name: str, icon: str, field: str) -> None:
+        super().__init__(coordinator, key)
+        self._attr_name = name
+        self._attr_icon = icon
+        self._field = field
+
+    @property
+    def is_on(self) -> bool:
+        return bool(getattr(self.coordinator.offpeak, self._field))
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        await self.coordinator.offpeak.async_set(**{self._field: True})
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        await self.coordinator.offpeak.async_set(**{self._field: False})

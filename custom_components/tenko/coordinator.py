@@ -58,6 +58,7 @@ class TenkoCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         self.api = api
         self.commands: dict[str, Any] = copy.deepcopy(GROUP_DEFAULTS)
+        self.offpeak: Any = None  # OffPeakManager, set in async_setup_entry
 
     async def _async_update_data(self) -> dict[str, Any]:
         try:
