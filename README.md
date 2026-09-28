@@ -2,6 +2,10 @@
 
 A custom integration for the **Tenko** electric boiler that talks to its cloud API ([docs](https://my.tenko.ua/api/)). It replaces the Node-RED flow: no MQTT, no `input_number`/`input_boolean`.
 
+## Icon
+
+The integration ships its own icon and logo in `custom_components/tenko/brand/` (the red Tenko triangle from my.tenko.ua). Home Assistant **2026.3+** shows them automatically; older versions show a generic placeholder.
+
 ## Installation
 
 **HACS:** HACS → ⋮ → Custom repositories → the URL of this repo, category *Integration* → install → restart HA.
