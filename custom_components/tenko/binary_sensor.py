@@ -98,6 +98,7 @@ class TenkoOffPeakSensor(TenkoEntity, BinarySensorEntity):
     """On while the current time is inside the off-peak window."""
 
     _attr_name = "Off-peak"
+    _heat_program = True
     _attr_icon = "mdi:weather-night"
 
     def __init__(self, coordinator: TenkoCoordinator) -> None:

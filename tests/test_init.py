@@ -191,13 +191,13 @@ async def test_peak_control(hass: HomeAssistant, aioclient_mock) -> None:
     op.now = lambda: clock["now"]
 
     s = hass.states.get
-    assert s("time.tenko_off_peak_start").state == "23:00:00"
-    assert s("time.tenko_off_peak_end").state == "07:00:00"
+    assert s("time.tenko_heat_program_off_peak_start").state == "23:00:00"
+    assert s("time.tenko_heat_program_off_peak_end").state == "07:00:00"
 
     # off-peak night: stage 2 on, control enabled
     await hass.services.async_call("switch", "turn_on", {"entity_id": "switch.tenko_stage_2"}, blocking=True)
-    await hass.services.async_call("switch", "turn_on", {"entity_id": "switch.tenko_turn_off_stages_in_peak"}, blocking=True)
-    assert s("binary_sensor.tenko_off_peak").state == "on"
+    await hass.services.async_call("switch", "turn_on", {"entity_id": "switch.tenko_heat_program_turn_off_stages_in_peak"}, blocking=True)
+    assert s("binary_sensor.tenko_heat_program_off_peak").state == "on"
     assert s("switch.tenko_stage_2").state == "on"
 
     # 07:01 -> peak: stages switched off and remembered
@@ -205,8 +205,8 @@ async def test_peak_control(hass: HomeAssistant, aioclient_mock) -> None:
     await op.async_check()
     await hass.async_block_till_done()
     assert s("switch.tenko_stage_2").state == "off"
-    assert s("binary_sensor.tenko_off_peak").state == "off"
-    assert s("binary_sensor.tenko_off_peak").attributes["stages_to_restore"] == ["stage_2"]
+    assert s("binary_sensor.tenko_heat_program_off_peak").state == "off"
+    assert s("binary_sensor.tenko_heat_program_off_peak").attributes["stages_to_restore"] == ["stage_2"]
 
     # manual turn on during peak is refused
     with pytest.raises(HomeAssistantError):
@@ -214,7 +214,7 @@ async def test_peak_control(hass: HomeAssistant, aioclient_mock) -> None:
 
     # move off-peak start to 22:00 via the time entity, then 22:00 -> restored
     await hass.services.async_call(
-        "time", "set_value", {"entity_id": "time.tenko_off_peak_start", "time": "22:00:00"}, blocking=True
+        "time", "set_value", {"entity_id": "time.tenko_heat_program_off_peak_start", "time": "22:00:00"}, blocking=True
     )
     clock["now"] = datetime(2026, 9, 29, 22, 0, 5)
     await op.async_check()
@@ -313,7 +313,7 @@ async def test_off_peak_start_heating(hass: HomeAssistant, aioclient_mock) -> No
 
     # daytime: choose stage 1 for off-peak heating -> nothing happens yet
     await hass.services.async_call(
-        "switch", "turn_on", {"entity_id": "switch.tenko_off_peak_heating_stage_1"}, blocking=True
+        "switch", "turn_on", {"entity_id": "switch.tenko_heat_program_off_peak_heating_stage_1"}, blocking=True
     )
     assert hass.states.get("switch.tenko_stage_1").state == "off"
 
@@ -327,7 +327,7 @@ async def test_off_peak_start_heating(hass: HomeAssistant, aioclient_mock) -> No
 
     # choosing stage 2 in the middle of the night applies immediately
     await hass.services.async_call(
-        "switch", "turn_on", {"entity_id": "switch.tenko_off_peak_heating_stage_2"}, blocking=True
+        "switch", "turn_on", {"entity_id": "switch.tenko_heat_program_off_peak_heating_stage_2"}, blocking=True
     )
     assert hass.states.get("switch.tenko_stage_2").state == "on"
 
@@ -341,3 +341,49 @@ async def test_options_flow(hass: HomeAssistant, aioclient_mock) -> None:
     assert result["type"] is FlowResultType.CREATE_ENTRY
     await hass.async_block_till_done()  # entry reloads with the new interval
     assert entry.runtime_data.update_interval == timedelta(seconds=30)
+
+
+async def test_heat_program_device(hass: HomeAssistant, aioclient_mock) -> None:
+    from homeassistant.helpers import device_registry as dr, entity_registry as er
+
+    entry = await _setup(hass, aioclient_mock)
+    devices = {d.name: d for d in dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)}
+    assert set(devices) == {"Tenko", "Tenko Heat program"}
+    program = devices["Tenko Heat program"]
+    assert program.via_device_id == devices["Tenko"].id
+
+    ents = er.async_entries_for_device(er.async_get(hass), program.id)
+    assert sorted(e.entity_id for e in ents) == [
+        "binary_sensor.tenko_heat_program_off_peak",
+        "switch.tenko_heat_program_off_peak_heating_stage_1",
+        "switch.tenko_heat_program_off_peak_heating_stage_2",
+        "switch.tenko_heat_program_restore_stages_after_peak",
+        "switch.tenko_heat_program_turn_off_stages_in_peak",
+        "time.tenko_heat_program_off_peak_end",
+        "time.tenko_heat_program_off_peak_start",
+    ]
+    assert all(e.entity_category is None for e in ents)  # shown as controls, not "Configuration"
+    assert hass.states.get("time.tenko_heat_program_off_peak_start").attributes["friendly_name"] == (
+        "Tenko Heat program 1. Off-peak start"
+    )
+
+
+async def test_existing_install_keeps_ids(hass: HomeAssistant, aioclient_mock) -> None:
+    """Entities registered by an older version keep their IDs and move to Heat program."""
+    from homeassistant.helpers import device_registry as dr, entity_registry as er
+
+    _mock_reads(aioclient_mock)
+    entry = MockConfigEntry(domain=DOMAIN, data={"host": HOST, "login": "u", "token": "t"}, unique_id="00000000")
+    entry.add_to_hass(hass)
+    ent_reg = er.async_get(hass)
+    old = ent_reg.async_get_or_create(
+        "time", DOMAIN, f"{entry.entry_id}_off_peak_start",
+        config_entry=entry, suggested_object_id="tenko_off_peak_start",
+    )
+    assert old.entity_id == "time.tenko_off_peak_start"
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    moved = ent_reg.async_get("time.tenko_off_peak_start")
+    assert dr.async_get(hass).async_get(moved.device_id).name == "Tenko Heat program"
+    assert hass.states.get("time.tenko_off_peak_start").state == "23:00:00"

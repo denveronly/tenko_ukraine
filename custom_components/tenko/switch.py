@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from typing import Any
 
 from homeassistant.components.switch import SwitchEntity, SwitchEntityDescription
-from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -85,7 +84,7 @@ class TenkoSwitch(TenkoEntity, SwitchEntity):
 class TenkoOffPeakSwitch(TenkoEntity, SwitchEntity):
     """Settings of the off-peak control (stored in HA, not on the boiler)."""
 
-    _attr_entity_category = EntityCategory.CONFIG
+    _heat_program = True
 
     def __init__(self, coordinator: TenkoCoordinator, key: str, name: str, icon: str, field: str) -> None:
         super().__init__(coordinator, key)

@@ -93,15 +93,17 @@ The server returns the **last snapshot the boiler sent**; it does not ask the bo
 
 The polling interval is set in *Integration → Configure* (10–3600 s, default 60). `button.tenko_refresh` fetches immediately.
 
-## Off-peak (night tariff) control
+## Off-peak (night tariff) control — "Tenko Heat program" device
 
-- Set the window with `time.tenko_off_peak_start` / `time.tenko_off_peak_end` (default 23:00–07:00; windows over midnight are fine).
-- Turn on `switch.tenko_turn_off_stages_in_peak`. Then, checked every minute:
+All off-peak entities live on a separate linked device, **Tenko Heat program** (shown under the boiler as a connected device). Home Assistant's section names (Controls, Sensors, Configuration, Diagnostic) cannot be renamed, so a sub-device is how they get their own group. On a fresh install their IDs start with `tenko_heat_program_` (for example `time.tenko_heat_program_off_peak_start`); installs that already had them keep their old IDs.
+
+- Set the window with `time.tenko_heat_program_off_peak_start` / `…_off_peak_end` (default 23:00–07:00; windows over midnight are fine).
+- Turn on `switch.tenko_heat_program_turn_off_stages_in_peak`. Then, checked every minute:
   - outside the window, any stage that is on (turned on from HA, an automation or the Tenko app) is switched **off**, and it is remembered which ones were on;
   - turning a stage on from HA during peak is refused with an error;
-  - when the window starts, the remembered stages are switched back **on** (if `switch.tenko_restore_stages_after_peak` is on).
-- **Heating at off-peak start:** turn on `switch.tenko_off_peak_heating_stage_1` and/or `…_stage_2`. When the window starts, those stages are switched on (once per night; choosing one in the middle of the night applies it immediately).
-- `binary_sensor.tenko_off_peak` shows whether it is off-peak right now.
+  - when the window starts, the remembered stages are switched back **on** (if `switch.tenko_heat_program_restore_stages_after_peak` is on).
+- **Heating at off-peak start:** turn on `switch.tenko_heat_program_off_peak_heating_stage_1` and/or `…_stage_2`. When the window starts, those stages are switched on (once per night; choosing one in the middle of the night applies it immediately).
+- `binary_sensor.tenko_heat_program_off_peak` shows whether it is off-peak right now.
 
 These settings are stored in Home Assistant (not on the boiler) and survive restarts. The window uses Home Assistant's clock and time zone.
 

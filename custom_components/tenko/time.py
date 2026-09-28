@@ -26,6 +26,8 @@ async def async_setup_entry(
 
 
 class TenkoOffPeakTime(TenkoEntity, TimeEntity):
+    _heat_program = True
+
     def __init__(self, coordinator: TenkoCoordinator, field: str, name: str, icon: str) -> None:
         super().__init__(coordinator, f"off_peak_{field}")
         self._field = field
