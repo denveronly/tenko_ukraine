@@ -12,6 +12,7 @@ Example response:
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import datetime
 from dataclasses import dataclass
 from typing import Any
 
@@ -118,14 +119,26 @@ def _ystat_by_month(data: dict[str, Any]) -> dict[str, float | None]:
     return out
 
 
-def _boiler_time(data: dict[str, Any]) -> str | None:
+def boiler_datetime(data: dict[str, Any]) -> datetime | None:
+    """Boiler clock (BDT) = time of the last data the boiler sent to the server.
+
+    The boiler has no time zone; it is assumed to run on HA's local time.
+    """
     b = data.get("BDT")
     if not isinstance(b, dict):
         return None
     try:
-        return "20{yy}-{mm}-{dd} {h:0>2}:{m:0>2}".format(**b)
-    except (KeyError, ValueError):
+        return datetime(
+            2000 + int(b["yy"]), int(b["mm"]), int(b["dd"]), int(b["h"]), int(b["m"]),
+            tzinfo=dt_util.get_default_time_zone(),
+        )
+    except (KeyError, TypeError, ValueError):
         return None
+
+
+def _boiler_time(data: dict[str, Any]) -> str | None:
+    when = boiler_datetime(data)
+    return when.strftime("%Y-%m-%d %H:%M") if when else None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -223,6 +236,12 @@ SENSORS: tuple[TenkoSensorDescription, ...] = (
             attrs_fn=(lambda m: lambda d: {"year": ystat_month_year(d, m)})(month),
         )
         for month, name in enumerate(MONTH_NAMES, start=1)
+    ),
+    TenkoSensorDescription(
+        key="last_update",
+        name="Last data from boiler",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        value_fn=boiler_datetime,
     ),
     # --- diagnostics ---
     TenkoSensorDescription(

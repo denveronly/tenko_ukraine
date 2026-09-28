@@ -14,6 +14,7 @@ from .offpeak import OffPeakManager
 
 PLATFORMS = [
     Platform.BINARY_SENSOR,
+    Platform.BUTTON,
     Platform.SENSOR,
     Platform.NUMBER,
     Platform.SWITCH,

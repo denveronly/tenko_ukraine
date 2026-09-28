@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+from datetime import timedelta
 import logging
 from typing import Any
 
@@ -13,6 +14,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .api import TenkoApi, TenkoAuthError, TenkoError
 from .const import (
+    CONF_SCAN_INTERVAL,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     EP_CONST_TEMP,
@@ -54,7 +56,11 @@ class TenkoCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER,
             config_entry=entry,
             name=DOMAIN,
-            update_interval=DEFAULT_SCAN_INTERVAL,
+            update_interval=timedelta(
+                seconds=entry.options.get(
+                    CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL.total_seconds()
+                )
+            ),
         )
         self.api = api
         self.commands: dict[str, Any] = copy.deepcopy(GROUP_DEFAULTS)

@@ -31,9 +31,10 @@
   "options": {
     "step": {
       "init": {
-        "title": "Energy estimate",
-        "description": "The boiler has no daily energy counter, so consumption is calculated from which heating elements are on. Set their power.",
+        "title": "Settings",
+        "description": "Update interval and element power. The boiler has no daily energy counter, so the energy estimate uses which heating elements are on.",
         "data": {
+          "scan_interval": "Update interval, seconds",
           "stage1_power": "Stage 1 (HE1) power, kW",
           "stage2_power": "Stage 2 (HE2) power, kW"
         }

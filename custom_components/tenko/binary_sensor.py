@@ -14,11 +14,13 @@ from homeassistant.components.binary_sensor import (
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.util import dt as dt_util
 
 from . import TenkoConfigEntry
 from .coordinator import TenkoCoordinator
 from .entity import TenkoEntity
-from .sensor import num, path
+from .const import OFFLINE_AFTER_MINUTES
+from .sensor import boiler_datetime, num, path
 
 
 def flag(value: Any) -> bool | None:
@@ -77,7 +79,7 @@ async def async_setup_entry(
 ) -> None:
     coordinator = entry.runtime_data
     async_add_entities(TenkoBinarySensor(coordinator, d) for d in BINARY_SENSORS)
-    async_add_entities([TenkoOffPeakSensor(coordinator)])
+    async_add_entities([TenkoOffPeakSensor(coordinator), TenkoOnlineSensor(coordinator)])
 
 
 class TenkoBinarySensor(TenkoEntity, BinarySensorEntity):
@@ -113,5 +115,35 @@ class TenkoOffPeakSensor(TenkoEntity, BinarySensorEntity):
             "end": op.end.strftime("%H:%M"),
             "next_change": op.next_change(),
             "peak_control": op.enabled,
+            "heat_stages_at_start": op.heat_stages,
             "stages_to_restore": op.saved_stages,
+        }
+
+
+class TenkoOnlineSensor(TenkoEntity, BinarySensorEntity):
+    """Off when the server only has old data (the boiler stopped reporting).
+
+    The server keeps serving the last snapshot the boiler sent, so polling
+    faster does not help when the boiler itself is offline.
+    """
+
+    _attr_name = "Boiler online"
+    _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
+
+    def __init__(self, coordinator: TenkoCoordinator) -> None:
+        super().__init__(coordinator, "boiler_online")
+
+    @property
+    def is_on(self) -> bool | None:
+        last = boiler_datetime(self.coordinator.data or {})
+        if last is None:
+            return None
+        return (dt_util.now() - last).total_seconds() <= OFFLINE_AFTER_MINUTES * 60
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        last = boiler_datetime(self.coordinator.data or {})
+        return {
+            "last_data": last.isoformat() if last else None,
+            "data_age_minutes": int((dt_util.now() - last).total_seconds() // 60) if last else None,
         }

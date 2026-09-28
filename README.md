@@ -46,7 +46,10 @@ Then go to *Settings → Devices & Services → Add Integration → Tenko Boiler
 | switch | Constant temperature, maintain min temperature, modulation | `/const_temp`, `/maintain_min_temp`, `/modulation` |
 | time | Off-peak start / Off-peak end (default 23:00–07:00) | stored in HA |
 | binary_sensor | Off-peak (on inside the window; attrs `next_change`, `stages_to_restore`) | HA clock |
-| switch | Turn off stages in peak / Restore stages after peak | stored in HA |
+| switch | Turn off stages in peak / Restore stages after peak / Off-peak heating: stage 1, stage 2 | stored in HA |
+| binary_sensor | Boiler online (data not older than 10 min) | `BDT` |
+| sensor | Last data from boiler (timestamp) | `BDT` |
+| button | Refresh | fetch now |
 | select | Program: `Temp` / `WChart` (weekly) / `DChart` (daily) | `/used_chart_type` |
 
 Current setpoints are read from `GET /settings`, `/const_temp` and `/used_chart_type` every minute, so changes made in the Tenko app show up in HA too.
@@ -77,6 +80,19 @@ The same sensor can go straight into the **Energy dashboard**.
 
 **2. Estimate.** `Energy today` / `Energy total` are integrated every minute from which heating elements are on (`HE1`/`HE2`) × their power (default 7 + 14 kW, configurable in *Integration → Configure*). They ignore modulation, so they are approximate.
 
+## Entity order
+
+Home Assistant sorts a device's entities alphabetically inside each group (Controls, Sensors, Configuration, Diagnostic) and an integration cannot change that. So entity **names** start with a position number, e.g. `1. Stage 1`, `2. Stage 2`, `3. Modulation`, `4. Water feed` … and in Sensors `1. Water feed temperature`, `2. Return water temperature` … with all energy sensors last. **Entity IDs have no numbers** (`switch.tenko_stage_1`, `number.tenko_water_feed`), so automations are not affected. To drop the numbers from a name, rename the entity in HA.
+
+## Data freshness
+
+The server returns the **last snapshot the boiler sent**; it does not ask the boiler for new data, and neither GET requests nor commands make it refresh. If the boiler loses its internet connection, the server (and HA) keep showing old values. Check:
+
+- `binary_sensor.tenko_boiler_online` — off when the boiler's data is older than 10 minutes (attribute `data_age_minutes`);
+- `sensor.tenko_last_data_from_boiler` — when the boiler last reported (from its clock `BDT`).
+
+The polling interval is set in *Integration → Configure* (10–3600 s, default 60). `button.tenko_refresh` fetches immediately.
+
 ## Off-peak (night tariff) control
 
 - Set the window with `time.tenko_off_peak_start` / `time.tenko_off_peak_end` (default 23:00–07:00; windows over midnight are fine).
@@ -84,6 +100,7 @@ The same sensor can go straight into the **Energy dashboard**.
   - outside the window, any stage that is on (turned on from HA, an automation or the Tenko app) is switched **off**, and it is remembered which ones were on;
   - turning a stage on from HA during peak is refused with an error;
   - when the window starts, the remembered stages are switched back **on** (if `switch.tenko_restore_stages_after_peak` is on).
+- **Heating at off-peak start:** turn on `switch.tenko_off_peak_heating_stage_1` and/or `…_stage_2`. When the window starts, those stages are switched on (once per night; choosing one in the middle of the night applies it immediately).
 - `binary_sensor.tenko_off_peak` shows whether it is off-peak right now.
 
 These settings are stored in Home Assistant (not on the boiler) and survive restarts. The window uses Home Assistant's clock and time zone.

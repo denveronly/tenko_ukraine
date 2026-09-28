@@ -41,6 +41,8 @@ async def async_setup_entry(
         [
             TenkoOffPeakSwitch(coordinator, "peak_control", "Turn off stages in peak", "mdi:transmission-tower-off", "enabled"),
             TenkoOffPeakSwitch(coordinator, "restore_after_peak", "Restore stages after peak", "mdi:restore", "restore"),
+            TenkoOffPeakSwitch(coordinator, "off_peak_heat_stage_1", "Off-peak heating: stage 1", "mdi:heating-coil", "heat_stage_1"),
+            TenkoOffPeakSwitch(coordinator, "off_peak_heat_stage_2", "Off-peak heating: stage 2", "mdi:heating-coil", "heat_stage_2"),
         ]
     )
 
@@ -93,7 +95,10 @@ class TenkoOffPeakSwitch(TenkoEntity, SwitchEntity):
 
     @property
     def is_on(self) -> bool:
-        return bool(getattr(self.coordinator.offpeak, self._field))
+        op = self.coordinator.offpeak
+        if self._field.startswith("heat_stage_"):
+            return self._field.removeprefix("heat_") in op.heat_stages
+        return bool(getattr(op, self._field))
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         await self.coordinator.offpeak.async_set(**{self._field: True})

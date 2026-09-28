@@ -26,6 +26,10 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .api import TenkoApi, TenkoAuthError, TenkoError, async_get_token
 from .const import (
     CONF_LOGIN,
+    CONF_SCAN_INTERVAL,
+    DEFAULT_SCAN_INTERVAL,
+    MAX_SCAN_INTERVAL,
+    MIN_SCAN_INTERVAL,
     CONF_STAGE1_POWER,
     CONF_STAGE2_POWER,
     CONF_TOKEN,
@@ -117,7 +121,7 @@ class TenkoConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class TenkoOptionsFlow(OptionsFlow):
-    """Element power used to estimate consumption (the boiler has no daily counter)."""
+    """Update interval and element power for the consumption estimate."""
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         if user_input is not None:
@@ -127,6 +131,10 @@ class TenkoOptionsFlow(OptionsFlow):
             step_id="init",
             data_schema=vol.Schema(
                 {
+                    vol.Required(
+                        CONF_SCAN_INTERVAL,
+                        default=opts.get(CONF_SCAN_INTERVAL, int(DEFAULT_SCAN_INTERVAL.total_seconds())),
+                    ): vol.All(vol.Coerce(int), vol.Range(min=MIN_SCAN_INTERVAL, max=MAX_SCAN_INTERVAL)),
                     vol.Required(
                         CONF_STAGE1_POWER, default=opts.get(CONF_STAGE1_POWER, DEFAULT_STAGE1_POWER)
                     ): vol.All(vol.Coerce(float), vol.Range(min=0, max=100)),

@@ -69,3 +69,68 @@ DEFAULT_STAGE2_POWER = 14.0
 
 STATUS_ON = "On"
 STATUS_OFF = "Off"
+
+# Update interval (options), seconds
+CONF_SCAN_INTERVAL = "scan_interval"
+MIN_SCAN_INTERVAL = 10
+MAX_SCAN_INTERVAL = 3600
+
+# The boiler is considered offline if its last data (BDT clock) is older than this
+OFFLINE_AFTER_MINUTES = 10
+
+MONTH_KEYS = (
+    "january", "february", "march", "april", "may", "june",
+    "july", "august", "september", "october", "november", "december",
+)
+
+# Display order on the device page. HA sorts entities alphabetically (numbers
+# numerically) inside each group, so the position is put in front of the name:
+# "1. Stage 1". Entity IDs are generated without it (number.tenko_water_feed).
+ENTITY_ORDER: dict[str, int] = {
+    # Controls
+    "stage_1": 1,
+    "stage_2": 2,
+    "modulation": 3,
+    "water_feed": 4,
+    "water_feed_delta": 5,
+    "returned_water_feed": 6,
+    "returned_water_feed_delta": 7,
+    "pause_1": 8,
+    "pause_2": 9,
+    "min_temp_low": 10,
+    "min_temp_high": 11,
+    "maintain_min_temp": 12,
+    "const_temp_mode": 13,
+    "const_temp": 14,
+    "used_chart_type": 15,
+    "refresh": 16,
+    # Sensors (sensor + binary_sensor share one group), energy last
+    "water_feed_temperature": 1,
+    "return_water_temperature": 2,
+    "air_temperature": 3,
+    "pressure": 4,
+    "mmt_temperature": 5,
+    "boiler_online": 6,
+    "last_update": 7,
+    "heater_1": 8,
+    "heater_2": 9,
+    "pump": 10,
+    "antifreeze": 11,
+    "error": 12,
+    "off_peak": 13,
+    "estimated_power": 14,
+    "energy_today": 20,
+    "energy_this_month": 21,
+    "energy_previous_month": 22,
+    "energy_total": 23,
+    "energy_period": 24,
+    "energy_12_months": 25,
+    **{f"energy_{m}": 26 + i for i, m in enumerate(MONTH_KEYS)},
+    # Configuration (off-peak)
+    "off_peak_start": 1,
+    "off_peak_end": 2,
+    "peak_control": 3,
+    "restore_after_peak": 4,
+    "off_peak_heat_stage_1": 5,
+    "off_peak_heat_stage_2": 6,
+}

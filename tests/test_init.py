@@ -252,3 +252,92 @@ async def test_temperature_sliders(hass: HomeAssistant, aioclient_mock) -> None:
     )
     post = [c[2] for c in aioclient_mock.mock_calls if c[0] == "POST"][-1]
     assert post == {"COT": {"status": "On", "temp": "21.5"}}
+
+
+async def test_entity_order_and_ids(hass: HomeAssistant, aioclient_mock) -> None:
+    await _setup(hass, aioclient_mock)
+    name = lambda e: hass.states.get(e).attributes["friendly_name"]  # noqa: E731
+    # IDs have no numbers, names do (HA sorts the device page by name)
+    assert name("switch.tenko_stage_1") == "Tenko 1. Stage 1"
+    assert name("switch.tenko_modulation") == "Tenko 3. Modulation"
+    assert name("number.tenko_water_feed") == "Tenko 4. Water feed"
+    assert name("number.tenko_pause_2") == "Tenko 9. Pause 2"
+    assert name("number.tenko_maintain_min_temp_max") == "Tenko 11. Maintain min temp: max"
+    assert name("sensor.tenko_water_feed_temperature") == "Tenko 1. Water feed temperature"
+    assert name("sensor.tenko_return_water_temperature") == "Tenko 2. Return water temperature"
+    assert name("sensor.tenko_energy_december") == "Tenko 37. Energy December"
+    # sorted like the HA device page does (numeric collation) -> energy last
+    import re
+
+    sensors = sorted(
+        (s.attributes["friendly_name"] for s in hass.states.async_all(("sensor", "binary_sensor"))
+         if s.attributes["friendly_name"].split()[1][0].isdigit()),
+        key=lambda n: int(re.match(r"Tenko (\d+)\.", n).group(1)),
+    )
+    assert sensors[0].endswith("Water feed temperature")
+    assert all("Energy" in n for n in sensors[-18:])
+
+
+async def test_boiler_online(hass: HomeAssistant, aioclient_mock, freezer) -> None:
+    # fixture BDT = 2026-04-06 21:24 local
+    freezer.move_to("2026-04-06 21:30:00+03:00")
+    await hass.config.async_set_time_zone("Europe/Kyiv")
+    await _setup(hass, aioclient_mock)
+    online = hass.states.get("binary_sensor.tenko_boiler_online")
+    assert online.state == "on" and online.attributes["data_age_minutes"] == 6
+    assert hass.states.get("sensor.tenko_last_data_from_boiler").state == "2026-04-06T18:24:00+00:00"
+
+    freezer.move_to("2026-04-06 22:00:00+03:00")
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert hass.states.get("binary_sensor.tenko_boiler_online").state == "off"
+
+
+async def test_scan_interval_option_and_refresh(hass: HomeAssistant, aioclient_mock) -> None:
+    entry = await _setup(hass, aioclient_mock, options={"scan_interval": 15})
+    assert entry.runtime_data.update_interval == timedelta(seconds=15)
+    calls = aioclient_mock.call_count
+    await hass.services.async_call("button", "press", {"entity_id": "button.tenko_refresh"}, blocking=True)
+    await hass.async_block_till_done()
+    assert aioclient_mock.call_count == calls + 4  # total_state, settings, const_temp, used_chart_type
+
+
+async def test_off_peak_start_heating(hass: HomeAssistant, aioclient_mock) -> None:
+    from datetime import datetime
+
+    entry = await _setup(hass, aioclient_mock)
+    aioclient_mock.post(URL + "/stages", json={"status": "ok"})
+    op = entry.runtime_data.offpeak
+    clock = {"now": datetime(2026, 9, 29, 12, 0)}
+    op.now = lambda: clock["now"]
+
+    # daytime: choose stage 1 for off-peak heating -> nothing happens yet
+    await hass.services.async_call(
+        "switch", "turn_on", {"entity_id": "switch.tenko_off_peak_heating_stage_1"}, blocking=True
+    )
+    assert hass.states.get("switch.tenko_stage_1").state == "off"
+
+    # 23:00 -> stage 1 on, once
+    clock["now"] = datetime(2026, 9, 29, 23, 0, 5)
+    await op.async_check()
+    await op.async_check()
+    assert hass.states.get("switch.tenko_stage_1").state == "on"
+    posts = [c[2] for c in aioclient_mock.mock_calls if c[0] == "POST"]
+    assert posts == [{"STG": {"stage_1": "On", "stage_2": "Off"}}]
+
+    # choosing stage 2 in the middle of the night applies immediately
+    await hass.services.async_call(
+        "switch", "turn_on", {"entity_id": "switch.tenko_off_peak_heating_stage_2"}, blocking=True
+    )
+    assert hass.states.get("switch.tenko_stage_2").state == "on"
+
+
+async def test_options_flow(hass: HomeAssistant, aioclient_mock) -> None:
+    entry = await _setup(hass, aioclient_mock)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"scan_interval": 30, "stage1_power": 7, "stage2_power": 14}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    await hass.async_block_till_done()  # entry reloads with the new interval
+    assert entry.runtime_data.update_interval == timedelta(seconds=30)
