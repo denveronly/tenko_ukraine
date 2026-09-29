@@ -237,7 +237,7 @@ async def test_temperature_sliders(hass: HomeAssistant, aioclient_mock) -> None:
         "number.tenko_return_water_feed",
         "number.tenko_water_feed_delta",
         "number.tenko_constant_air_temperature",
-        "number.tenko_maintain_min_temp_min",
+        "number.tenko_heat_program_maintain_min_temp_min",
     ):
         assert hass.states.get(entity).attributes["mode"] == "slider", entity
     pause = hass.states.get("number.tenko_pause_1")
@@ -254,28 +254,20 @@ async def test_temperature_sliders(hass: HomeAssistant, aioclient_mock) -> None:
     assert post == {"COT": {"status": "On", "temp": "21.5"}}
 
 
-async def test_entity_order_and_ids(hass: HomeAssistant, aioclient_mock) -> None:
+async def test_entity_names_and_ids(hass: HomeAssistant, aioclient_mock) -> None:
     await _setup(hass, aioclient_mock)
     name = lambda e: hass.states.get(e).attributes["friendly_name"]  # noqa: E731
-    # IDs have no numbers, names do (HA sorts the device page by name)
-    assert name("switch.tenko_stage_1") == "Tenko 1. Stage 1"
-    assert name("switch.tenko_modulation") == "Tenko 3. Modulation"
-    assert name("number.tenko_water_feed") == "Tenko 4. Water feed"
-    assert name("number.tenko_pause_2") == "Tenko 9. Pause 2"
-    assert name("number.tenko_maintain_min_temp_max") == "Tenko 11. Maintain min temp: max"
-    assert name("sensor.tenko_water_feed_temperature") == "Tenko 1. Water feed temperature"
-    assert name("sensor.tenko_return_water_temperature") == "Tenko 2. Return water temperature"
-    assert name("sensor.tenko_energy_december") == "Tenko 37. Energy December"
-    # sorted like the HA device page does (numeric collation) -> energy last
+    assert name("switch.tenko_stage_1") == "Tenko Stage 1"
+    assert name("number.tenko_water_feed") == "Tenko Water feed"
+    assert name("sensor.tenko_water_feed_temperature") == "Tenko Water feed temperature"
+    assert name("sensor.tenko_energy_december") == "Tenko Energy December"
+    # no position numbers anywhere
     import re
 
-    sensors = sorted(
-        (s.attributes["friendly_name"] for s in hass.states.async_all(("sensor", "binary_sensor"))
-         if s.attributes["friendly_name"].split()[1][0].isdigit()),
-        key=lambda n: int(re.match(r"Tenko (\d+)\.", n).group(1)),
-    )
-    assert sensors[0].endswith("Water feed temperature")
-    assert all("Energy" in n for n in sensors[-18:])
+    assert not [
+        s.entity_id for s in hass.states.async_all()
+        if re.search(r"(Tenko|program) \d+\. ", s.attributes.get("friendly_name", ""))
+    ]
 
 
 async def test_boiler_online(hass: HomeAssistant, aioclient_mock, freezer) -> None:
@@ -355,6 +347,9 @@ async def test_heat_program_device(hass: HomeAssistant, aioclient_mock) -> None:
     ents = er.async_entries_for_device(er.async_get(hass), program.id)
     assert sorted(e.entity_id for e in ents) == [
         "binary_sensor.tenko_heat_program_off_peak",
+        "number.tenko_heat_program_maintain_min_temp_max",
+        "number.tenko_heat_program_maintain_min_temp_min",
+        "switch.tenko_heat_program_maintain_min_temperature",
         "switch.tenko_heat_program_off_peak_heating_stage_1",
         "switch.tenko_heat_program_off_peak_heating_stage_2",
         "switch.tenko_heat_program_restore_stages_after_peak",
@@ -364,7 +359,7 @@ async def test_heat_program_device(hass: HomeAssistant, aioclient_mock) -> None:
     ]
     assert all(e.entity_category is None for e in ents)  # shown as controls, not "Configuration"
     assert hass.states.get("time.tenko_heat_program_off_peak_start").attributes["friendly_name"] == (
-        "Tenko Heat program 1. Off-peak start"
+        "Tenko Heat program Off-peak start"
     )
 
 

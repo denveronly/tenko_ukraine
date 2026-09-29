@@ -24,10 +24,12 @@ from .entity import TenkoEntity
 class TenkoNumberDescription(NumberEntityDescription):
     group: str
     field: str
+    heat_program: bool = False  # belongs to the 'Tenko Heat program' device
 
 
-def _temp(key, name, group, field, lo, hi, step=1.0):
+def _temp(key, name, group, field, lo, hi, step=1.0, heat_program=False):
     return TenkoNumberDescription(
+        heat_program=heat_program,
         key=key,
         name=name,
         group=group,
@@ -47,8 +49,8 @@ NUMBERS: tuple[TenkoNumberDescription, ...] = (
     _temp("returned_water_feed", "Return water feed", GROUP_RWF, "temp", 20, 85),
     _temp("returned_water_feed_delta", "Return water feed delta", GROUP_RWF, "delta", 1, 10),
     _temp("const_temp", "Constant air temperature", GROUP_COT, "temp", 5, 30, 0.5),
-    _temp("min_temp_low", "Maintain min temp: min", GROUP_MMT, "min_temp", 1, 25),
-    _temp("min_temp_high", "Maintain min temp: max", GROUP_MMT, "max_temp", 1, 25),
+    _temp("min_temp_low", "Maintain min temp: min", GROUP_MMT, "min_temp", 1, 25, heat_program=True),
+    _temp("min_temp_high", "Maintain min temp: max", GROUP_MMT, "max_temp", 1, 25, heat_program=True),
     TenkoNumberDescription(
         key="pause_1", name="Pause 1", icon="mdi:timer-pause-outline", group=GROUP_PSS, field="pause_1",
         native_min_value=0, native_max_value=60, native_step=1, mode=NumberMode.BOX,
@@ -73,6 +75,7 @@ class TenkoNumber(TenkoEntity, NumberEntity):
     entity_description: TenkoNumberDescription
 
     def __init__(self, coordinator: TenkoCoordinator, description: TenkoNumberDescription) -> None:
+        self._heat_program = description.heat_program
         super().__init__(coordinator, description.key)
         self.entity_description = description
 

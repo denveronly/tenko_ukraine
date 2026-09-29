@@ -20,13 +20,14 @@ from .entity import TenkoEntity
 class TenkoSwitchDescription(SwitchEntityDescription):
     group: str
     field: str | None = None  # None -> the group value itself is "On"/"Off"
+    heat_program: bool = False  # belongs to the 'Tenko Heat program' device
 
 
 SWITCHES: tuple[TenkoSwitchDescription, ...] = (
     TenkoSwitchDescription(key="stage_1", name="Stage 1", icon="mdi:heating-coil", group=GROUP_STG, field="stage_1"),
     TenkoSwitchDescription(key="stage_2", name="Stage 2", icon="mdi:heating-coil", group=GROUP_STG, field="stage_2"),
     TenkoSwitchDescription(key="const_temp_mode", name="Constant air temperature", icon="mdi:thermostat", group=GROUP_COT, field="status"),
-    TenkoSwitchDescription(key="maintain_min_temp", name="Maintain min temperature", icon="mdi:snowflake-thermometer", group=GROUP_MMT, field="status"),
+    TenkoSwitchDescription(key="maintain_min_temp", name="Maintain min temperature", icon="mdi:snowflake-thermometer", group=GROUP_MMT, field="status", heat_program=True),
     TenkoSwitchDescription(key="modulation", name="Modulation", icon="mdi:tune-variant", group=GROUP_MOD),
 )
 
@@ -50,6 +51,7 @@ class TenkoSwitch(TenkoEntity, SwitchEntity):
     entity_description: TenkoSwitchDescription
 
     def __init__(self, coordinator: TenkoCoordinator, description: TenkoSwitchDescription) -> None:
+        self._heat_program = description.heat_program
         super().__init__(coordinator, description.key)
         self.entity_description = description
 

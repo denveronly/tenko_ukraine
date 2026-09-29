@@ -80,10 +80,6 @@ The same sensor can go straight into the **Energy dashboard**.
 
 **2. Estimate.** `Energy today` / `Energy total` are integrated every minute from which heating elements are on (`HE1`/`HE2`) × their power (default 7 + 14 kW, configurable in *Integration → Configure*). They ignore modulation, so they are approximate.
 
-## Entity order
-
-Home Assistant sorts a device's entities alphabetically inside each group (Controls, Sensors, Configuration, Diagnostic) and an integration cannot change that. So entity **names** start with a position number, e.g. `1. Stage 1`, `2. Stage 2`, `3. Modulation`, `4. Water feed` … and in Sensors `1. Water feed temperature`, `2. Return water temperature` … with all energy sensors last. **Entity IDs have no numbers** (`switch.tenko_stage_1`, `number.tenko_water_feed`), so automations are not affected. To drop the numbers from a name, rename the entity in HA.
-
 ## Data freshness
 
 The server returns the **last snapshot the boiler sent**; it does not ask the boiler for new data, and neither GET requests nor commands make it refresh. If the boiler loses its internet connection, the server (and HA) keep showing old values. Check:
@@ -95,7 +91,7 @@ The polling interval is set in *Integration → Configure* (10–3600 s, default
 
 ## Off-peak (night tariff) control — "Tenko Heat program" device
 
-All off-peak entities live on a separate linked device, **Tenko Heat program** (shown under the boiler as a connected device). Home Assistant's section names (Controls, Sensors, Configuration, Diagnostic) cannot be renamed, so a sub-device is how they get their own group. On a fresh install their IDs start with `tenko_heat_program_` (for example `time.tenko_heat_program_off_peak_start`); installs that already had them keep their old IDs.
+The off-peak schedule and the "maintain min temperature" mode (`Maintain min temperature` switch, `Maintain min temp: min` / `max`) live on a separate linked device, **Tenko Heat program** (shown under the boiler as a connected device). Home Assistant's section names (Controls, Sensors, Configuration, Diagnostic) cannot be renamed, so a sub-device is how they get their own group. On a fresh install their IDs start with `tenko_heat_program_` (for example `time.tenko_heat_program_off_peak_start`); installs that already had them keep their old IDs.
 
 - Set the window with `time.tenko_heat_program_off_peak_start` / `…_off_peak_end` (default 23:00–07:00; windows over midnight are fine).
 - Turn on `switch.tenko_heat_program_turn_off_stages_in_peak`. Then, checked every minute:
